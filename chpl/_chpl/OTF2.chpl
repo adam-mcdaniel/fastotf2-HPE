@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 module OTF2 {
   public use CTypes;
   public use MoreCTypes;

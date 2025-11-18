@@ -1,5 +1,6 @@
+# Copyright Hewlett Packard Enterprise Development LP.
+
 # Makefile for OTF2 to CSV Chapel Converter
-# Author: Generated Makefile
 # Description: Compiles trace_to_csv.chpl with additional source files
 
 # Disable all built-in suffix rules

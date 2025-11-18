@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 module Otf2Read {
   // Compile with
   // make serial

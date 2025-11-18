@@ -1,5 +1,6 @@
+# Copyright Hewlett Packard Enterprise Development LP.
+
 # Makefile for Simple Chapel OTF2 Reader (Multiple Versions)
-# Author: Generated Makefile
 # Description: Compiles available versions of otf2read.chpl
 
 # Include common variables and rules

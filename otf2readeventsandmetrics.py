@@ -1,3 +1,5 @@
+# Copyright Hewlett Packard Enterprise Development LP.
+
 import otf2
 import time
 

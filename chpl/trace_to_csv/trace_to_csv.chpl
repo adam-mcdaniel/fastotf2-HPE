@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 module TraceToCSV {
   use OTF2;
   use Time;

@@ -1,5 +1,6 @@
+# Copyright Hewlett Packard Enterprise Development LP.
+
 # Main Makefile for Chapel OTF2 Projects
-# Author: Generated Main Makefile
 # Description: This Makefile does not build anything. Please cd into subdirectories to build.
 
 # Subdirectories containing projects

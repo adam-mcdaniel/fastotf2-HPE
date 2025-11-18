@@ -1,5 +1,6 @@
+# Copyright Hewlett Packard Enterprise Development LP.
+
 # Makefile for Read Events and Metrics Chapel OTF2 Reader
-# Author: Generated Makefile
 # Description: Compiles read_events_and_metrics.chpl (serial version only)
 
 # Include common variables and rules

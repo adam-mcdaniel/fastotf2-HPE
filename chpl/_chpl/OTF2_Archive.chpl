@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 module OTF2_Archive {
   use CTypes;
   use OTF2_ErrorCodes;

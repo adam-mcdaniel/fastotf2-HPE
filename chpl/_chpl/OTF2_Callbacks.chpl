@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 module OTF2_Callbacks {
   use CTypes;
   use OTF2_GeneralDefinitions;

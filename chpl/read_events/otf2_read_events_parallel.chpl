@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 module Otf2ReadEvents {
   // Build: chpl -M _chpl otf2_read_events.chpl -I/opt/otf2/include -L/opt/otf2/lib -lotf2 -o otf2_read_events
   use OTF2;

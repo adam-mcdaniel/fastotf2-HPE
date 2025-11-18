@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 #include <otf2/otf2.h>
 #include <stdlib.h>
 #include <stdio.h>

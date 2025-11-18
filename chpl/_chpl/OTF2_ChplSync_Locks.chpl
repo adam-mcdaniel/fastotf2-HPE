@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 /*
  * Chapel Sync Variable-based Locking for OTF2
  * 

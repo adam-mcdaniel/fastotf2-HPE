@@ -1,3 +1,5 @@
+// Copyright Hewlett Packard Enterprise Development LP.
+
 module TraceToCSV {
   // Build: chpl -M _chpl trace_to_csv.chpl -I/opt/otf2/include -L/opt/otf2/lib -lotf2 -o trace_to_csv
   use OTF2;
