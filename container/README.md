@@ -298,18 +298,21 @@ The following environment variables are pre-configured:
 /workspace/                    # Your Chapel source code (mounted from host)
 ├── Makefile                   # Top-level (instructions only, does not build)
 ├── Makefile.common            # Shared build rules and variables
-├── MAKEFILE_GUIDE.md          # Comprehensive Makefile documentation
 ├── _chpl/                     # Chapel OTF2 module files
 ├── simple/                    # Simple OTF2 examples
-│   ├── Makefile              # Builds serial, parallel, parallel2 versions
+│   ├── Makefile               # Builds serial, parallel, parallel2 versions
 │   ├── otf2read.chpl
 │   ├── otf2read_parallel.chpl
-│   └── otf2read_parallel2.chpl
+│   ├── otf2read_parallel2.chpl
+│   └── otf2read_parallel3.chpl
 ├── read_events/               # Event processing
-│   ├── Makefile              # Builds serial, parallel, distributed versions
+│   ├── Makefile               # Builds serial, parallel, distributed versions
 │   ├── otf2_read_events.chpl
 │   ├── otf2_read_events_parallel.chpl
 │   └── otf2_read_events_distributed.chpl
+├── read_events_and_metrics/  # Event and metric processing
+│   ├── Makefile              # Builds serial
+│   └── read_events_metrics.chpl
 └── trace_to_csv/              # Trace conversion
     ├── Makefile              # Builds serial and parallel versions
     ├── trace_to_csv.chpl
@@ -346,9 +349,20 @@ On your **desktop system**, save the built container to a portable archive file:
 #### Using Docker:
 
 ```bash
-docker buildx imagetools create \
+docker buildx build \
   --output type=oci,dest=chapel-dev.tar \
-  chapel-dev:latest
+  -t chapel-dev:latest \
+  .
+```
+
+If you're on mac, you'd also need to specify the platforms for cross-achitecture support:
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --output type=oci,dest=chapel-dev.tar \
+  -t chapel-dev:latest \
+  .
 ```
 
 #### Using Podman:
@@ -567,12 +581,33 @@ See `/workspace/MAKEFILE_GUIDE.md` for complete documentation.
 
 **Problem**: Slow execution
 
-**Solution**: 
+**Solution**:
 - Use parallel versions for large traces
 - Ensure sufficient memory allocation to Docker:
   ```bash
   docker compose run --rm -e DOCKER_MEMORY=8g chapel-dev
   ```
+
+### Issues migrating to HPC systems
+
+**Problem**: The docker command to export to oci archive doesn't work:
+
+On many standard Linux Docker installations (specifically those using the legacy storage backend), the default driver throws an error when you try to export type=oci.
+This is not an issue with Docker desktop.
+
+**Solution**:
+- Switch to a different docker driver
+```bash
+docker buildx create --use --name oci-builder
+```
+- Try again to export the oci archive
+- To switch back to the default driver :
+```bash
+docker buildx use default
+docker buildx rm oci-builder
+```
+
+Alternatively, use the podman commands instead.
 
 ### Getting Additional Help
 
