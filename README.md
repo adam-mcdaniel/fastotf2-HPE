@@ -13,7 +13,11 @@ A high-performance Chapel-based library for reading and processing OTF2 (Open Tr
 - **`c`** - C versions of the same benchmarks, except `trace_to_csv`
 
 ### Development Environment
-- **`container`** - Docker containers coming soon
+- **`container`** - How to run in containers
+  - A Dockerfile, and docker compose file
+  - Instructions to run
+  - Instructions to migrate to apptainer (for HPC systems)
+  - See the README.
 
 ### Building from Source
 
