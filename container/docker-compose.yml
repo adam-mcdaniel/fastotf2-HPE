@@ -1,0 +1,14 @@
+# Copyright Hewlett Packard Enterprise Development LP.
+
+services:
+  chapel-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chapel-dev
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../hpc-energy-trace-analysis/scorep-traces/:/traces
+      - ../OTF2-to-parquet/chpl:/workspace
+    working_dir: /workspace
