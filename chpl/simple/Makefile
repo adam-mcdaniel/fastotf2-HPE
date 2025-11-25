@@ -27,15 +27,17 @@ CHPL_OTF2_MODULE_DIR = ../_chpl
 SERIAL_SOURCE = $(BASE_NAME).chpl
 PARALLEL_SOURCE = $(BASE_NAME)_parallel.chpl
 PARALLEL2_SOURCE = $(BASE_NAME)_parallel2.chpl
+PARALLEL3_SOURCE = $(BASE_NAME)_parallel3.chpl
 # Note: DISTRIBUTED version source file does not exist, so we don't build it
 
 # Define target executables (only for files that exist)
 SERIAL_TARGET = $(BASE_NAME)
 PARALLEL_TARGET = $(BASE_NAME)_parallel
 PARALLEL2_TARGET = $(BASE_NAME)_parallel2
+PARALLEL3_TARGET = $(BASE_NAME)_parallel3
 
 # All targets - only include what we can actually build
-ALL_TARGETS = $(SERIAL_TARGET) $(PARALLEL_TARGET) $(PARALLEL2_TARGET)
+ALL_TARGETS = $(SERIAL_TARGET) $(PARALLEL_TARGET) $(PARALLEL2_TARGET) $(PARALLEL3_TARGET)
 
 # ============================================================================
 # Phony Targets
@@ -64,6 +66,12 @@ $(PARALLEL_TARGET): $(PARALLEL_SOURCE)
 		CHPL_OTF2_MODULE_DIR=$(CHPL_OTF2_MODULE_DIR)
 
 $(PARALLEL2_TARGET): $(PARALLEL2_SOURCE)
+	@$(MAKE) build-version \
+		SOURCE_FILE=$< \
+		TARGET=$@ \
+		CHPL_OTF2_MODULE_DIR=$(CHPL_OTF2_MODULE_DIR)
+
+$(PARALLEL3_TARGET): $(PARALLEL3_SOURCE)
 	@$(MAKE) build-version \
 		SOURCE_FILE=$< \
 		TARGET=$@ \

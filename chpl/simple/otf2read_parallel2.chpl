@@ -1,4 +1,7 @@
 // Copyright Hewlett Packard Enterprise Development LP.
+// This version is based on the incomplete ChplLocks for OTF2
+// It will not work without additional work to make OTF2 thread-safe in Chapel
+
 
 module Otf2Read {
   // Compile with
@@ -64,11 +67,9 @@ module Otf2Read {
 
   // Config constant for command-line argument
   // Usage: ./otf2read_parallel2 --tracePath=/path/to/traces.otf2
-  config const tracePath: string = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2";
+  config const tracePath: string = "/traces/simple-mi300-example-run/traces.otf2";
 
   proc main() {
-    // const tracePath = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
-    // const tracePath = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2";
 
     var initial_reader = OTF2_Reader_Open(tracePath.c_str());
     if initial_reader == nil {

@@ -10,10 +10,10 @@ SUBDIRS = simple read_events read_events_and_metrics trace_to_csv
 .PHONY: all help
 
 all:
-	@echo "=========================================================================="
+	@echo "=================================================="
 	@echo "  This top-level Makefile does not build anything."
 	@echo "  Please navigate to a subdirectory and run 'make' there."
-	@echo "=========================================================================="
+	@echo "=================================================="
 	@echo ""
 	@echo "Available subdirectories:"
 	@for dir in $(SUBDIRS); do \
@@ -29,9 +29,9 @@ all:
 
 # Help target
 help:
-	@echo "=========================================================================="
+	@echo "=================================================="
 	@echo "  Main Makefile for Chapel OTF2 Projects"
-	@echo "=========================================================================="
+	@echo "=================================================="
 	@echo ""
 	@echo "This Makefile does not build targets. To build, you must:"
 	@echo "  1. Navigate into a subdirectory"
@@ -49,5 +49,5 @@ help:
 	@echo "  make serial   # Build only serial version"
 	@echo "  make clean    # Clean built artifacts"
 	@echo ""
-	@echo "Each subdirectory has its own Makefile with appropriate targets."
-	@echo "=========================================================================="
+	@echo "Each subdirectory has its own Makefile targets."
+	@echo "=================================================="

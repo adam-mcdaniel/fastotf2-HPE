@@ -62,11 +62,10 @@ module Otf2Read {
 
   // Config constant for command-line argument
   // Usage: ./otf2read --tracePath=/path/to/traces.otf2
-  config const tracePath: string = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
+  config const tracePath: string = "/traces/simple-mi300-example-run/traces.otf2";
 
   proc main() {
-    // const tracePath = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
-    // const tracePath = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2";
+
     // writeln("Calling OTF2_Reader_Open");
     var reader = OTF2_Reader_Open(tracePath.c_str());
     if reader == nil {

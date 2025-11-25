@@ -9,6 +9,6 @@ services:
     stdin_open: true
     tty: true
     volumes:
-      - ../hpc-energy-trace-analysis/scorep-traces/:/traces
-      - ../OTF2-to-parquet/chpl:/workspace
+      - ../scorep-traces/:/traces
+      - ../chpl:/workspace
     working_dir: /workspace

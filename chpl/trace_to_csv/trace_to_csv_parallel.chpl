@@ -1,4 +1,6 @@
 // Copyright Hewlett Packard Enterprise Development LP.
+// Untested, experimental Chapel code for reading OTF2 traces in parallel
+// Has compilation errors currently
 
 module TraceToCSVParallel {
   use OTF2;
@@ -741,12 +743,12 @@ module TraceToCSVParallel {
 
     // --- Merge per-reader contexts into a single aggregated structure ---
     writeln("\n--- Merging contexts from parallel readers ---");
-    
+
     var mergedEvtCtx = new EvtCallbackContext(evtArgs, defCtx);
-    
+
     for i in 0..<numberOfReaders {
       const ctx = evtContexts[i];
-      
+
       // Merge seenGroups
       for (group, threads) in ctx.seenGroups.items() {
         if !mergedEvtCtx.seenGroups.contains(group) {
@@ -755,7 +757,7 @@ module TraceToCSVParallel {
           try! mergedEvtCtx.seenGroups[group] += threads;
         }
       }
-      
+
       // Merge callGraphs
       for (group, threadMap) in ctx.callGraphs.items() {
         if !mergedEvtCtx.callGraphs.contains(group) {
@@ -772,7 +774,7 @@ module TraceToCSVParallel {
           }
         }
       }
-      
+
       // Merge metrics
       for (group, metricMap) in ctx.metrics.items() {
         if !mergedEvtCtx.metrics.contains(group) {

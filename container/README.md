@@ -19,7 +19,7 @@ This Docker container provides a complete development environment for working wi
 Before you begin, ensure you have the following:
 
 1. **Docker Compose** installed on your system
-2. **OTF2 3.1.1 tarball**: Download `otf2-3.1.1.tar.gz` from [https://perftools.pages.jsc.fz-juelich.de/cicd/otf2/](https://perftools.pages.jsc.fz-juelich.de/cicd/otf2/) and place it in the `chpl-docker/` directory
+2. **OTF2 3.1.1 tarball**: Download `otf2-3.1.1.tar.gz` from [https://perftools.pages.jsc.fz-juelich.de/cicd/otf2/](https://perftools.pages.jsc.fz-juelich.de/cicd/otf2/) and place it in the `container/` directory
 
 Verify your Docker installation:
 ```bash
@@ -33,13 +33,13 @@ docker compose version
 **Important:** You must use Docker Compose to build this container as it includes the necessary OTF2 support and volume configurations.
 
 ```bash
-cd chpl-docker
+cd container
 docker compose build
 ```
 
 This will:
 1. Build the container image based on Chapel 2.6.0
-2. Install OTF2 3.1.1 from the tarball in the `chpl-docker/` directory
+2. Install OTF2 3.1.1 from the tarball in the `container/` directory
 3. Configure all necessary environment variables
 4. Set up the workspace directory structure
 
@@ -51,17 +51,14 @@ This will:
 
 Start the container in interactive mode:
 
+If you're not already in the container directory, `cd` into it.
+
 ```bash
-cd chpl-docker
 docker compose up -d
 docker compose exec chapel-dev /bin/bash
 ```
 
-Or start and attach in one command:
-
-```bash
-docker compose run --rm chapel-dev
-```
+The container will continue running in the background even after you `exit`.
 
 To stop the container:
 
@@ -69,12 +66,19 @@ To stop the container:
 docker compose down
 ```
 
+Or start and attach in one command (Recommended for transient containers):
+
+```bash
+docker compose run --rm chapel-dev
+```
+
+
 ### Volume Mounts Explained
 
 The container mounts two important directories:
 
-- **`/traces`**: Contains OTF2 trace files from `hpc-energy-trace-analysis/scorep-traces/`
-- **`/workspace`**: Your Chapel source code directory (`OTF2-to-parquet/chpl/`)
+- **`/traces`**: Contains OTF2 trace files from `scorep-traces/`
+- **`/workspace`**: Your Chapel source code directory (`chpl/`)
 
 Any changes you make in `/workspace` inside the container will be reflected in your host filesystem.
 
@@ -90,7 +94,8 @@ The workspace contains the following projects:
 
 1. **`simple/`** - Basic OTF2 reading examples (3 variants: serial, parallel, parallel2)
 2. **`read_events/`** - Event reading and processing (3 variants: serial, parallel, distributed)
-3. **`trace_to_csv/`** - Convert OTF2 traces to CSV format (2 variants: serial, parallel)
+3. **`read_events_and_metrics`** - Event and metric reading
+4. **`trace_to_csv/`** - Convert OTF2 traces to CSV format (2 variants: serial, parallel)
 
 ### Build System Overview
 
@@ -480,7 +485,7 @@ docker info
 
 **Problem**: OTF2 installation fails
 
-**Solution**: Ensure `otf2-3.1.1.tar.gz` is present in the `chpl-docker` directory.
+**Solution**: Ensure `otf2-3.1.1.tar.gz` is present in the `container` directory.
 
 ### Programs Won't Compile
 

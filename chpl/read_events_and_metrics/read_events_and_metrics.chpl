@@ -381,13 +381,9 @@ module TraceToCSV {
 
   // Config constant for command-line argument
   // Usage: ./read_events_and_metrics --tracePath=/path/to/traces.otf2
-  config const tracePath: string = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2";
+  config const tracePath: string = "/traces/simple-mi300-example-run/traces.otf2";
 
   proc main() {
-
-    // Paths: adjust as needed
-    // const tracePath = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
-    // const tracePath = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2";
     var sw: stopwatch;
     sw.start();
 
