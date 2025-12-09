@@ -57,7 +57,7 @@ module Otf2Read {
 
   // Config constant for command-line argument
   // Usage: ./otf2read_parallel3 --tracePath=/path/to/traces.otf2
-  config const tracePath: string = "/traces/simple-mi300-example-run/traces.otf2";
+  config const tracePath: string = "/workspace/scorep-traces/simple-mi300-example-run/traces.otf2";
 
   proc main() {
 

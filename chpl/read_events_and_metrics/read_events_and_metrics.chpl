@@ -381,7 +381,7 @@ module TraceToCSV {
 
   // Config constant for command-line argument
   // Usage: ./read_events_and_metrics --tracePath=/path/to/traces.otf2
-  config const tracePath: string = "/traces/simple-mi300-example-run/traces.otf2";
+  config const tracePath: string = "/workspace/scorep-traces/simple-mi300-example-run/traces.otf2";
 
   proc main() {
     var sw: stopwatch;

@@ -138,7 +138,7 @@ module Otf2ReadEvents {
   }
   // Config constant for command-line argument
   // Usage: ./otf2_read_events --tracePath=/path/to/traces.otf2
-  config const tracePath: string = "/traces/simple-mi300-example-run/traces.otf2";
+  config const tracePath: string = "/workspace/scorep-traces/simple-mi300-example-run/traces.otf2";
 
   proc main() {
     var sw: stopwatch;

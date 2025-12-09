@@ -55,8 +55,8 @@ int
 main( int    argc,
       char** argv )
 {
-    // OTF2_Reader* reader = OTF2_Reader_Open("/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2" );
-    OTF2_Reader* reader = OTF2_Reader_Open("/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2" );
+    // OTF2_Reader* reader = OTF2_Reader_Open("/workspace/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2" );
+    OTF2_Reader* reader = OTF2_Reader_Open("/workspace/scorep-traces/simple-mi300-example-run/traces.otf2" );
     OTF2_Reader_SetSerialCollectiveCallbacks( reader );
     uint64_t number_of_locations;
     OTF2_Reader_GetNumberOfLocations( reader,
