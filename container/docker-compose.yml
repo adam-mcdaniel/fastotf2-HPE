@@ -9,6 +9,5 @@ services:
     stdin_open: true
     tty: true
     volumes:
-      - ../scorep-traces/:/traces
-      - ../chpl:/workspace
+      - ../:/workspace
     working_dir: /workspace
