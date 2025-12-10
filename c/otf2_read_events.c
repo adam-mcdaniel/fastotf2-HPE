@@ -277,6 +277,9 @@ Enter_store_and_count(OTF2_LocationRef location,
 {
     // Get pointers to the context and event data
     EventCallbackContext* ctx = (EventCallbackContext*)userData;
+    if (!ctx) {
+        return OTF2_CALLBACK_ERROR;
+    }
     AllEventsData* all_event_data = ctx->event_data;
     // Increment enter count
     all_event_data->enter_count++;

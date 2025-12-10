@@ -104,16 +104,18 @@ module Otf2ReadEvents {
                             userData: c_ptr(void),
                             attributes: c_ptr(OTF2_AttributeList),
                             region: OTF2_RegionRef): OTF2_CallbackCode {
-    //writeln("Debug: Entering Enter_store_and_count with location=", location, ", region=", region);
     // Get pointers to the context and event data
     var ctxPtr = userData: c_ptr(EvtCallbackContext);
     if ctxPtr == nil then return OTF2_CALLBACK_ERROR;
     ref ctx = ctxPtr.deref();
     ref defCtx = ctx.defContext;
     ref evd = ctx.eventData;
+    // Increment enter count
     evd.enterCount += 1;
+    // Get location and region names
     const locname = if defCtx.locationIds.contains(location) then defCtx.locationTable[location] else "UnknownLocation";
     const regionname = if defCtx.regionIds.contains(region) then defCtx.regionTable[region] else "UnknownRegion";
+    // Add event to all_event_data
     evd.events.pushBack(new EventInfo(time, locname, "Enter", regionname));
     return OTF2_CALLBACK_SUCCESS;
   }
@@ -138,7 +140,7 @@ module Otf2ReadEvents {
   }
   // Config constant for command-line argument
   // Usage: ./otf2_read_events --tracePath=/path/to/traces.otf2
-  config const tracePath: string = "/workspace/scorep-traces/simple-mi300-example-run/traces.otf2";
+  config const tracePath: string = "/workspace/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
 
   proc main() {
     var sw: stopwatch;
