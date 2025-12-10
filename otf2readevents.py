@@ -9,11 +9,6 @@ def read_otf2_events_only(archive_name):
 
     # Open the OTF2 archive
     with otf2.reader.open(archive_name) as trace:
-        print("Trace Clock Properties:")
-        print(f"  Timer Resolution.   : {trace.definitions.clock_properties.timer_resolution}")
-        print(f"  Global Offset       : {trace.definitions.clock_properties.global_offset}")
-        print(f"  Trace Length        : {trace.definitions.clock_properties.trace_length}")
-        print(f"  Realtime Timestamp. : {trace.definitions.clock_properties.realtime_timestamp}")
         # Measure time taken to open the OTF2 archive
         open_end = time.time()
         print(f"Time taken to open OTF2 archive: {open_end - start_time:.2f} seconds")
@@ -43,8 +38,8 @@ def read_otf2_events_only(archive_name):
     return data
 
 
-archive_name = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2"
-# archive_name = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2"
+archive_name = "scorep-traces/frontier-hpl-run-using-2-ranks/traces.otf2"
+# archive_name = "scorep-traces/simple-mi300-example-run/traces.otf2"
 
 start_time = time.time()
 data = read_otf2_events_only(archive_name)
