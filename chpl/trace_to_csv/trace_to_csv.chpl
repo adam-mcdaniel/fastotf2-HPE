@@ -280,6 +280,9 @@ module TraceToCSV {
     // We don't use a ProgramBegin event because each MPI rank will have it's own
     // and we want a global start time
     const start_time = clockProps.globalOffset;
+    if ts < start_time {
+      return -1.0 * ((start_time - ts):real(64) / clockProps.timerResolution);
+    }
     return (ts - start_time):real(64) / clockProps.timerResolution;
   }
 
@@ -302,7 +305,7 @@ module TraceToCSV {
     return (locName, locGroup, regionName);
   }
 
-  proc updateMaps(ctx: EvtCallbackContext, locGroup: string, location: string) {
+  proc updateMaps(ref ctx: EvtCallbackContext, locGroup: string, location: string) {
     // Update seen groups
     try! {
     ref seenGroups = ctx.seenGroups;
@@ -311,7 +314,7 @@ module TraceToCSV {
       writeln("New group and thread: ", location, " in group ", locGroup);
     } else if !seenGroups[locGroup].contains(location) {
       seenGroups[locGroup] += location;
-      writeln("New thread: ", location, " in group ", locGroup);
+      writeln("New thread: ", location, " in existing group ", locGroup);
     }
     }
 
@@ -343,13 +346,13 @@ module TraceToCSV {
     }
   }
 
-  proc checkEnterLeaveSkipConditions(ctx: EvtCallbackContext,
+  proc checkEnterLeaveSkipConditions(const ref ctx: EvtCallbackContext,
                                      locGroup: string,
                                      regionName: string): bool {
     // Check if we are tracking this process
     // I don't know how to get "all processes" in Chapel so we don't do this check for now
     // if !ctx.evtArgs.processesToTrack.contains(locGroup) then
-      // return true; // Skip this event
+    //   return true; // Skip this event
 
     // Check for other skip conditions
     const regionNameLower = regionName.toLower();
@@ -374,6 +377,7 @@ module TraceToCSV {
     if ctxPtr == nil then return OTF2_CALLBACK_ERROR;
     ref ctx = ctxPtr.deref();
     ref defCtx = ctx.defContext;
+
     const (locName, locGroup, regionName) = getLocationAndRegionInfo(defCtx, location, region);
     updateMaps(ctx, locGroup, locName);
 
@@ -401,6 +405,7 @@ module TraceToCSV {
     if ctxPtr == nil then return OTF2_CALLBACK_ERROR;
     ref ctx = ctxPtr.deref();
     ref defCtx = ctx.defContext;
+
     const (locName, locGroup, regionName) = getLocationAndRegionInfo(defCtx, location, region);
     updateMaps(ctx, locGroup, locName);
 
@@ -544,16 +549,13 @@ module TraceToCSV {
   //   ./trace_to_csv --processesToTrackArg="process1,process2"
   //   ./trace_to_csv --tracePath=/path/to/traces.otf2 --crayTimeOffsetArg=1.5 --metricsToTrackArg="metric1,metric2"
 
-  config const tracePath: string = "/traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
+  config const tracePath: string = "/workspace/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
   config const crayTimeOffsetArg: real(64) = 1.0;
   config const metricsToTrackArg: string = "A2rocm_smi:::energy_count:device=0,A2rocm_smi:::energy_count:device=2,A2rocm_smi:::energy_count:device=4,A2rocm_smi:::energy_count:device=6,A2coretemp:::craypm:accel0_energy,A2coretemp:::craypm:accel1_energy,A2coretemp:::craypm:accel2_energy,A2coretemp:::craypm:accel3_energy";
   config const processesToTrackArg: string = ""; // Empty string means track all processes
 
   proc main() {
 
-    // Paths: adjust as needed
-    // const tracePath = "/traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
-    // const tracePath = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2";
     var sw: stopwatch;
     sw.start();
 

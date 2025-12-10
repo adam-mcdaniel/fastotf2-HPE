@@ -1,6 +1,4 @@
 // Copyright Hewlett Packard Enterprise Development LP.
-// Untested, experimental Chapel code for reading OTF2 traces in parallel
-// Has compilation errors currently
 
 module TraceToCSVParallel {
   use OTF2;
@@ -282,6 +280,9 @@ module TraceToCSVParallel {
     // We don't use a ProgramBegin event because each MPI rank will have it's own
     // and we want a global start time
     const start_time = clockProps.globalOffset;
+    if ts < start_time {
+      return -1.0 * ((start_time - ts):real(64) / clockProps.timerResolution);
+    }
     return (ts - start_time):real(64) / clockProps.timerResolution;
   }
 
@@ -291,21 +292,20 @@ module TraceToCSVParallel {
     const locName = if defCtx.locationIds.contains(location) then defCtx.locationTable[location].name else "UnknownLocation";
     var locGroup = "UnknownLocationGroup";
     if defCtx.locationIds.contains(location) {
-      const groupRef = defCtx.locationTable[location].group;
-      if defCtx.locationGroupIds.contains(groupRef) {
-        locGroup = defCtx.locationGroupTable[groupRef].name;
-      } else {
-        // Try to get creating location group if exists
-        const creatingGroupRef = defCtx.locationTable[location].group;
-        if defCtx.locationGroupIds.contains(creatingGroupRef) then
-          locGroup = defCtx.locationGroupTable[creatingGroupRef].name;
+      const lgid = defCtx.locationTable[location].group;
+      if defCtx.locationGroupIds.contains(lgid) {
+        const locationGroup = defCtx.locationGroupTable[lgid];
+        // Use creating_location_group if it exists (matching Python behavior)
+        locGroup = if locationGroup.creatingLocationGroup != "None" && locationGroup.creatingLocationGroup != "" 
+                   then locationGroup.creatingLocationGroup
+                   else locationGroup.name;
       }
     }
     const regionName = if defCtx.regionIds.contains(region) then defCtx.regionTable[region] else "UnknownRegion";
     return (locName, locGroup, regionName);
   }
 
-  proc updateMaps(ctx: EvtCallbackContext, locGroup: string, location: string) {
+  proc updateMaps(ref ctx: EvtCallbackContext, locGroup: string, location: string) {
     // Update seen groups
     try! {
     ref seenGroups = ctx.seenGroups;
@@ -322,29 +322,31 @@ module TraceToCSVParallel {
     // Update call graphs
     ref callGraphs = ctx.callGraphs;
     if !callGraphs.contains(locGroup) {
-      var newMap = new map(string, shared CallGraph);
-      callGraphs[locGroup] = newMap;
+      writeln("New call graph group: ", locGroup);
+      callGraphs[locGroup] = new map(string, shared CallGraph);
     }
     if !callGraphs[locGroup].contains(location) {
-      // writeln("Creating call graph for location: ", location, " in group ", locGroup);
-      var newCallGraph = new shared CallGraph();
-      try! {
-        callGraphs[locGroup][location] = newCallGraph;
-      }
+      writeln("New call graph for thread: ", location, " in group ", locGroup);
+      callGraphs[locGroup].add(location, new shared CallGraph());
+      // For whatever reason
+      // callGraphs[locGroup][location] = new shared CallGraph();
+      // causes issues, so we use add() instead
+
     }
     }
 
     // Update metrics
     ref metrics = ctx.metrics;
     if !metrics.contains(locGroup) {
-      var newMetricMap = new map(string, list((real(64), OTF2_Type, OTF2_MetricValue)));
-      try! {
-        metrics[locGroup] = newMetricMap;
+      metrics[locGroup] = new map(string, list((real(64), OTF2_Type, OTF2_MetricValue)));
+      for metric in ctx.evtArgs.metricsToTrack {
+        metrics[locGroup][metric] = new list((real(64), OTF2_Type, OTF2_MetricValue));
+        writeln("New metric list for metric: ", metric, " in group ", locGroup);
       }
     }
   }
 
-  proc checkEnterLeaveSkipConditions(ctx: EvtCallbackContext,
+  proc checkEnterLeaveSkipConditions(const ref ctx: EvtCallbackContext,
                                      locGroup: string,
                                      regionName: string): bool {
     // Check if we are tracking this process
@@ -356,8 +358,9 @@ module TraceToCSVParallel {
     const regionNameLower = regionName.toLower();
     if regionNameLower.size >= 3 {
       const prefix = regionNameLower[0..2];
-      if prefix == "mpi" || prefix == "omp" || prefix == "!$o" then
+      if prefix == "mpi" || prefix == "hip" {
         return true; // Skip this event
+      }
     }
     return false; // Do not skip
   }
@@ -376,17 +379,18 @@ module TraceToCSVParallel {
     ref defCtx = ctx.defContext;
 
     const (locName, locGroup, regionName) = getLocationAndRegionInfo(defCtx, location, region);
+    updateMaps(ctx, locGroup, locName);
 
     if checkEnterLeaveSkipConditions(ctx, locGroup, regionName) then
       return OTF2_CALLBACK_SUCCESS;
 
-    updateMaps(ctx, locGroup, locName);
+    // Get current time in seconds
+    const currentTime = timestampToSeconds(time, defCtx.clockProps);
 
-    const timeInSeconds = timestampToSeconds(time, defCtx.clockProps);
-    try! {
-      ref callGraph = ctx.callGraphs[locGroup][locName];
-      callGraph.enter(timeInSeconds, regionName);
-    }
+    // Enter Callgraph
+    ref callGraph = try! ctx.callGraphs[locGroup][locName];
+    callGraph.enter(currentTime, regionName);
+
     return OTF2_CALLBACK_SUCCESS;
   }
 
@@ -395,7 +399,7 @@ module TraceToCSVParallel {
                       userData: c_ptr(void),
                       attributes: c_ptr(OTF2_AttributeList),
                       region: OTF2_RegionRef): OTF2_CallbackCode {
-    //writeln("Debug: Entering Leave_store_and_count with location=", location, ", region=", region);
+    //writeln("Debug: Entering Leave_callback with location=", location, ", region=", region);
     // Get pointers to the context and event data
     var ctxPtr = userData: c_ptr(EvtCallbackContext);
     if ctxPtr == nil then return OTF2_CALLBACK_ERROR;
@@ -403,166 +407,231 @@ module TraceToCSVParallel {
     ref defCtx = ctx.defContext;
 
     const (locName, locGroup, regionName) = getLocationAndRegionInfo(defCtx, location, region);
+    updateMaps(ctx, locGroup, locName);
 
     if checkEnterLeaveSkipConditions(ctx, locGroup, regionName) then
       return OTF2_CALLBACK_SUCCESS;
 
-    const timeInSeconds = timestampToSeconds(time, defCtx.clockProps);
-    try! {
-      ref callGraph = ctx.callGraphs[locGroup][locName];
-      callGraph.leave(timeInSeconds);
-    }
+
+    // Get current time in seconds
+    const currentTime = timestampToSeconds(time, defCtx.clockProps);
+
+    // Leave Callgraph
+    ref callGraph = try! ctx.callGraphs[locGroup][locName];
+    callGraph.leave(currentTime); // We ignore regionName here
+
     return OTF2_CALLBACK_SUCCESS;
   }
 
   proc getMetricInfo(defCtx: DefCallbackContext,
-                     metric: OTF2_MetricRef): (bool, OTF2_LocationRef, string) {
-    var isMetricInstance = false;
-    var recorder: OTF2_LocationRef = 0;
-    var metricName: string = "";
+                     location: OTF2_LocationRef,
+                     metric: OTF2_MetricRef): (string, string, string) {
+    var metricName: string;
+    var metricUnit: string;
+    var metricRecorder: string;
 
-    ref mctx = defCtx.metricDefContext;
-
-    // Check if it's a metric instance
-    if mctx.metricInstanceIds.contains(metric) {
-      isMetricInstance = true;
-      const instance = mctx.metricInstanceTable[metric];
-      recorder = instance.recorder;
-      const classRef = instance.metricClass;
-
-      // Get metric member name
-      if mctx.metricClassIds.contains(classRef) {
-        const metricClass = mctx.metricClassTable[classRef];
-        const firstMemberRef = metricClass.firstMemberID;
-        if mctx.metricMemberIds.contains(firstMemberRef) {
-          const member = mctx.metricMemberTable[firstMemberRef];
-          metricName = member.name;
+    ref metricCtx = defCtx.metricDefContext;
+    var metricClassRef: OTF2_MetricRef;
+    // This metric can be a metric class or a metric instance, check both
+    // If it is a metric instance, it will also have a recorder location
+    // Otherwise the recorder is the same as the location of the event
+    if metricCtx.metricInstanceIds.contains(metric) {
+      const mInstance = metricCtx.metricInstanceTable[metric];
+      metricRecorder = if defCtx.locationIds.contains(mInstance.recorder) then defCtx.locationTable[mInstance.recorder].name else "UnknownLocation";
+      metricClassRef = mInstance.metricClass;
+    } else {
+      metricClassRef = metric;
+      (metricRecorder, _, _) = getLocationAndRegionInfo(defCtx, location, 0);
+    }
+    if metricCtx.metricClassIds.contains(metricClassRef) {
+      const metricClass = metricCtx.metricClassTable[metricClassRef];
+      if metricClass.numberOfMetrics == 1 { // We only handle single metric members for now
+        const metricMemberRef = metricClass.firstMemberID;
+        if metricCtx.metricMemberIds.contains(metricMemberRef) {
+          const metricMember = metricCtx.metricMemberTable[metricMemberRef];
+          metricName = metricMember.name;
+          metricUnit = metricMember.unit;
         } else {
-          metricName = "UnknownMetricMember_" + firstMemberRef:string;
+          metricName = "UnknownMetricMember";
+          metricUnit = "UnknownUnit";
         }
       } else {
-        metricName = "UnknownMetricClass_" + classRef:string;
-      }
-    } else if mctx.metricClassRecorderIds.contains(metric) {
-      // It's a metric class with recorder
-      isMetricInstance = false;
-      recorder = mctx.metricClassRecorderTable[metric];
-
-      if mctx.metricClassIds.contains(metric) {
-        const metricClass = mctx.metricClassTable[metric];
-        const firstMemberRef = metricClass.firstMemberID;
-        if mctx.metricMemberIds.contains(firstMemberRef) {
-          const member = mctx.metricMemberTable[firstMemberRef];
-          metricName = member.name;
+        writeln("WARNING: Metric class with ", metricClass.numberOfMetrics, " members - only processing first member");
+        // Instead of halting, just process the first member
+        const metricMemberRef = metricClass.firstMemberID;
+        if metricCtx.metricMemberIds.contains(metricMemberRef) {
+          const metricMember = metricCtx.metricMemberTable[metricMemberRef];
+          metricName = metricMember.name;
+          metricUnit = metricMember.unit;
         } else {
-          metricName = "UnknownMetricMember_" + firstMemberRef:string;
+          metricName = "UnknownMetricMember";
+          metricUnit = "UnknownUnit";
         }
-      } else {
-        metricName = "UnknownMetricClass_" + metric:string;
       }
     } else {
-      metricName = "UnknownMetric_" + metric:string;
+      metricName = "UnknownMetricClass";
+      metricUnit = "UnknownUnit";
     }
-
-    return (isMetricInstance, recorder, metricName);
+    return (metricName, metricUnit, metricRecorder);
   }
 
   proc Metric_callback(location: OTF2_LocationRef,
                        time: OTF2_TimeStamp,
                        userData: c_ptr(void),
-                       attributes: c_ptr(OTF2_AttributeList),
+                       attributeList: c_ptr(OTF2_AttributeList),
                        metric: OTF2_MetricRef,
                        numberOfMetrics: c_uint8,
                        typeIDs: c_ptrConst(OTF2_Type),
                        metricValues: c_ptrConst(OTF2_MetricValue)): OTF2_CallbackCode {
+
+    // Get pointers to the context and event data
     var ctxPtr = userData: c_ptr(EvtCallbackContext);
     if ctxPtr == nil then return OTF2_CALLBACK_ERROR;
     ref ctx = ctxPtr.deref();
     ref defCtx = ctx.defContext;
+    // Get metric info like name, unit, value, recorder location
+    const (locName, locGroup, _) = getLocationAndRegionInfo(defCtx, location, 0);
+    // We only handle single metric members for now
+    if numberOfMetrics != 1 then
+      halt("Metric event with multiple metrics not supported yet");
 
-    const (isMetricInstance, recorder, metricName) = getMetricInfo(defCtx, metric);
+    // Question: Should we check if this metric is one we want to track? Python version does not do that
 
-    // Check if we are tracking this metric
-    if !ctx.evtArgs.metricsToTrack.isEmpty() && !ctx.evtArgs.metricsToTrack.contains(metricName) then
+
+    const (metricName, metricUnit, metricRecorder) = getMetricInfo(defCtx, location, metric);
+
+    // If we are not tracking this metric, skip it
+    if !ctx.evtArgs.metricsToTrack.contains(metricName) {
       return OTF2_CALLBACK_SUCCESS;
-
-    // For metric instances, the location parameter is the recorder
-    // For metric classes, we use the recorder from the metric class recorder table
-    const actualRecorder = if isMetricInstance then location else recorder;
-
-    // Get location group info
-    var locGroup = "UnknownLocationGroup";
-    if defCtx.locationIds.contains(actualRecorder) {
-      const groupRef = defCtx.locationTable[actualRecorder].group;
-      if defCtx.locationGroupIds.contains(groupRef) then
-        locGroup = defCtx.locationGroupTable[groupRef].name;
     }
 
-    // Initialize metrics map if needed
+    const metricType = typeIDs[0];
+    const metricValue = metricValues[0];
+
+    // Get the time for this metric in seconds
+    var currentTime = timestampToSeconds(time, defCtx.clockProps);
+    // Adjust for craypm metrics, as they are reported with a delay
+    if metricName.toLower().find("cray") >= 0 && ctx.evtArgs.crayTimeOffset != 0.0 {
+      currentTime -= ctx.evtArgs.crayTimeOffset;
+    }
+    // Update the seen groups, call graphs, and metrics maps
+    updateMaps(ctx, locGroup, locName);
+
     ref metrics = ctx.metrics;
-    if !metrics.contains(locGroup) {
-      var newMetricMap = new map(string, list((real(64), OTF2_Type, OTF2_MetricValue)));
-      try! {
-        metrics[locGroup] = newMetricMap;
+
+    // Store the metric value if this metric is one we want to track
+    // If either the value has changed or if this is the first value for this metric
+    // We append it to the list for this metric
+    try {
+      if metrics[locGroup][metricName].isEmpty() ||
+         metrics[locGroup][metricName].last[2] != metricValue {
+        metrics[locGroup][metricName].pushBack((currentTime, metricType, metricValue));
+        // writeln("Stored metric value: ", metricValue, " for metric ", metricName, " in location ", locName, " of group ", locGroup, " at time ", currentTime);
       }
-    }
-
-    var timeInSeconds = timestampToSeconds(time, defCtx.clockProps);
-
-    // Special handling for cray_pm metrics (offset adjustment)
-    const metricNameLower = metricName.toLower();
-    if metricNameLower.find("craypm") >= 0 then
-      timeInSeconds += ctx.evtArgs.crayTimeOffset;
-
-    // Store metric values
-    for i in 0..<numberOfMetrics {
-      const valueType = typeIDs[i];
-      const value = metricValues[i];
-
-      try! {
-        ref groupMetrics = metrics[locGroup];
-        if !groupMetrics.contains(metricName) {
-          var newList = new list((real(64), OTF2_Type, OTF2_MetricValue));
-          groupMetrics[metricName] = newList;
-        }
-        groupMetrics[metricName].pushBack((timeInSeconds, valueType, value));
+    } catch e {
+      writeln("Error storing metric: ", e);
+      writeln("  locGroup: ", locGroup);
+      writeln("  metricName: ", metricName);
+      writeln("  metrics.contains(locGroup): ", metrics.contains(locGroup));
+      if metrics.contains(locGroup) {
+        try! writeln("  metrics[locGroup].contains(metricName): ", metrics[locGroup].contains(metricName));
       }
     }
 
     return OTF2_CALLBACK_SUCCESS;
   }
 
-  // Config constant for command-line argument
-  // Usage: ./trace_to_csv_parallel --tracePath=/path/to/traces.otf2
-  config const tracePath: string = "/traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
+  proc mergeEvtContexts(const ref contexts: [] EvtCallbackContext): EvtCallbackContext throws{
+    if contexts.size == 0 {
+      halt("No contexts to merge");
+    }
+
+    // Start with the first context
+    // We assume all contexts have the same evtArgs and defContext
+    var mergedCtx = new EvtCallbackContext(contexts[0].evtArgs, contexts[0].defContext);
+
+    // Merge the rest
+    for i in 0..<contexts.size {
+      ref ctx = contexts[i];
+
+      // Merge seenGroups
+      for (group, threads) in ctx.seenGroups.items() {
+        if !mergedCtx.seenGroups.contains(group) {
+          mergedCtx.seenGroups[group] = threads;
+        } else {
+          mergedCtx.seenGroups[group] += threads;
+        }
+      }
+
+      // Merge callGraphs
+      for (group, threadMap) in ctx.callGraphs.items() {
+        if !mergedCtx.callGraphs.contains(group) {
+          mergedCtx.callGraphs[group] = threadMap;
+        } else {
+          for (thread, callGraph) in threadMap.items() {
+             if mergedCtx.callGraphs[group].contains(thread) {
+               writeln("WARNING: Duplicate thread ", thread, " in group ", group, " during merge.");
+             }
+             mergedCtx.callGraphs[group].add(thread, callGraph);
+          }
+        }
+      }
+
+      // Merge metrics
+      for (group, threadMap) in ctx.metrics.items() {
+        if !mergedCtx.metrics.contains(group) {
+          mergedCtx.metrics[group] = threadMap;
+        } else {
+          for (thread, metricList) in threadMap.items() {
+             if mergedCtx.metrics[group].contains(thread) {
+               writeln("WARNING: Duplicate thread ", thread, " in group ", group, " for metrics during merge.");
+             }
+             mergedCtx.metrics[group].add(thread, metricList);
+          }
+        }
+      }
+    }
+
+    return mergedCtx;
+  }
+
+  // Config constants for command-line arguments
+  // Usage examples:
+  //   ./trace_to_csv --tracePath=/path/to/traces.otf2
+  //   ./trace_to_csv --crayTimeOffsetArg=2.5
+  //   ./trace_to_csv --metricsToTrackArg="metric1,metric2,metric3"
+  //   ./trace_to_csv --processesToTrackArg="process1,process2"
+  //   ./trace_to_csv --tracePath=/path/to/traces.otf2 --crayTimeOffsetArg=1.5 --metricsToTrackArg="metric1,metric2"
+
+  config const tracePath: string = "/workspace/scorep-traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
+  config const crayTimeOffsetArg: real(64) = 1.0;
+  config const metricsToTrackArg: string = "A2rocm_smi:::energy_count:device=0,A2rocm_smi:::energy_count:device=2,A2rocm_smi:::energy_count:device=4,A2rocm_smi:::energy_count:device=6,A2coretemp:::craypm:accel0_energy,A2coretemp:::craypm:accel1_energy,A2coretemp:::craypm:accel2_energy,A2coretemp:::craypm:accel3_energy";
+  config const processesToTrackArg: string = ""; // Empty string means track all processes
 
   proc main() {
 
-    // Paths: adjust as needed
-    // const tracePath = "/traces/frontier-hpl-run-using-2-ranks-with-craypm/traces.otf2";
-    // const tracePath = "/Users/khandeka/dev/ornl/arkouda-telemetry-analysis/hpc-energy-trace-analysis/scorep-traces/simple-mi300-example-run/traces.otf2";
     var sw: stopwatch;
     sw.start();
 
-    var initial_reader = OTF2_Reader_Open(tracePath.c_str());
-    if initial_reader == nil {
-      writeln("Failed to open trace file");
+    var reader = OTF2_Reader_Open(tracePath.c_str());
+    if reader == nil {
+      writeln("Failed to open trace");
       return;
     }
 
     const openTime = sw.elapsed();
-    writef("Time taken to open initial OTF2 archive: %.2dr seconds\n", openTime);
-    sw.clear();
+    writef("Time taken to open OTF2 archive: %.2dr seconds\n", openTime);
+    sw.clear(); // Restart stopwatch for next timing
 
-    OTF2_Reader_SetSerialCollectiveCallbacks(initial_reader);
+    OTF2_Reader_SetSerialCollectiveCallbacks(reader);
 
     var numberOfLocations: c_uint64 = 0;
-    OTF2_Reader_GetNumberOfLocations(initial_reader, c_ptrTo(numberOfLocations));
+    OTF2_Reader_GetNumberOfLocations(reader, c_ptrTo(numberOfLocations));
     writeln("Number of locations: ", numberOfLocations);
 
-    // Definition context & callbacks
+
     var defCtx = new DefCallbackContext();
-    var globalDefReader = OTF2_Reader_GetGlobalDefReader(initial_reader);
+    var globalDefReader = OTF2_Reader_GetGlobalDefReader(reader);
     var defCallbacks = OTF2_GlobalDefReaderCallbacks_New();
     OTF2_GlobalDefReaderCallbacks_SetClockPropertiesCallback(defCallbacks,
                                                         c_ptrTo(registerClockProperties): c_fn_ptr);
@@ -575,229 +644,133 @@ module TraceToCSVParallel {
     OTF2_GlobalDefReaderCallbacks_SetMetricInstanceCallback(defCallbacks, c_ptrTo(GlobDefMetricInstance_Register): c_fn_ptr);
     OTF2_GlobalDefReaderCallbacks_SetMetricClassRecorderCallback(defCallbacks, c_ptrTo(GlobDefMetricClassRecorder_Register): c_fn_ptr);
 
-    OTF2_Reader_RegisterGlobalDefCallbacks(initial_reader,
+    OTF2_Reader_RegisterGlobalDefCallbacks(reader,
                                            globalDefReader,
                                            defCallbacks,
                                            c_ptrTo(defCtx): c_ptr(void));
     OTF2_GlobalDefReaderCallbacks_Delete(defCallbacks);
 
     var definitionsRead: c_uint64 = 0;
-    OTF2_Reader_ReadAllGlobalDefinitions(initial_reader, globalDefReader, c_ptrTo(definitionsRead));
+    OTF2_Reader_ReadAllGlobalDefinitions(reader, globalDefReader, c_ptrTo(definitionsRead));
     writeln("Global definitions read: ", definitionsRead);
 
     const defReadTime = sw.elapsed();
     writef("Time taken to read global definitions: %.2dr seconds\n", defReadTime);
-    sw.clear();
+    sw.clear(); // Restart stopwatch for next timing
 
-    // Convert associative domain to array for distribution
-    const locationArray : [0..<numberOfLocations] uint = for l in defCtx.locationIds do l;
-    const totalLocs = locationArray.size;
-    writeln("Total locations: ", totalLocs);
-    writeln("SANITY CHECK:", totalLocs == numberOfLocations);
+    // Close the initial reader
+    OTF2_Reader_Close(reader);
 
-    const locToArrayTime = sw.elapsed();
-    writeln("Time taken to convert location IDs to array: ", locToArrayTime, " seconds");
-    sw.clear();
-
-    // Select locations to read definitions from, in this case, all
-    for loc in locationArray {
-      OTF2_Reader_SelectLocation(initial_reader, loc);
-    }
-
-    // Open files, read local defs per location
-    const successfulOpenDefFiles =
-                        OTF2_Reader_OpenDefFiles(initial_reader) == OTF2_SUCCESS;
-
-    // Read all local definitions files
-    for loc in locationArray {
-      if successfulOpenDefFiles {
-        var defReader = OTF2_Reader_GetDefReader(initial_reader, loc);
-        if defReader != nil {
-          var defReads: c_uint64 = 0;
-          OTF2_Reader_ReadAllLocalDefinitions(initial_reader,
-                                              defReader,
-                                              c_ptrTo(defReads));
-
-          OTF2_Reader_CloseDefReader(initial_reader, defReader);
-        }
+    // Parse metrics to track from config argument
+    var metricsToTrack: domain(string);
+    if metricsToTrackArg != "" {
+      var metricsArray = metricsToTrackArg.split(",");
+      for metric in metricsArray {
+        metricsToTrack += metric.strip();
       }
-      // No marking event files for reading as we're only doing def files for now
     }
 
-    if successfulOpenDefFiles {
-      OTF2_Reader_CloseDefFiles(initial_reader);
-    }
-
-    // Close the initial_reader now that we have the number of locations
-    // and definitions
-    OTF2_Reader_Close(initial_reader);
-
-    // This is to use the most number of readers that makes sense
-    // const numberOfReaders = 5;
-    const numberOfReaders = here.maxTaskPar;
-    writeln("Number of readers: ", numberOfReaders);
-
-    // Metrics to track
-    var metricsToTrack: domain(string) = {
-    'A2rocm_smi:::energy_count:device=0',
-    'A2rocm_smi:::energy_count:device=2',
-    'A2rocm_smi:::energy_count:device=4',
-    'A2rocm_smi:::energy_count:device=6',
-
-    'A2coretemp:::craypm:accel0_energy',
-    'A2coretemp:::craypm:accel1_energy',
-    'A2coretemp:::craypm:accel2_energy',
-    'A2coretemp:::craypm:accel3_energy',
-    };
-
-    // Empty for now since I don't know how to populate this in Chapel
+    // Parse processes to track from config argument
     var processesToTrack: domain(string);
+    if processesToTrackArg != "" {
+      var processesArray = processesToTrackArg.split(",");
+      for process in processesArray {
+        processesToTrack += process.strip();
+      }
+    }
 
-    var crayPmOffset: real(64) = 1.0;
+    // Use the config const for crayTimeOffset
+    var crayPmOffset: real(64) = crayTimeOffsetArg;
     var evtArgs = new EvtCallbackArgs(processesToTrack=processesToTrack,
                                       metricsToTrack=metricsToTrack,
                                       crayTimeOffset=crayPmOffset);
 
+    // Parallel Reading Setup
+    const numberOfReaders = here.maxTaskPar;
+    writeln("Number of readers: ", numberOfReaders);
+
+    // Convert locationIds to array for partitioning
+    const locationArray : [0..<numberOfLocations] OTF2_LocationRef = for l in defCtx.locationIds do l;
+    const totalLocs = locationArray.size;
+
+    // Prepare contexts array
+    var evtContexts =  [0..<numberOfReaders] new EvtCallbackContext(evtArgs, defCtx);
+    // for i in 0..<numberOfReaders {
+    //    evtContexts[i] = new EvtCallbackContext(evtArgs, defCtx);
+    // }
+
     var totalEventsReadAcrossReaders: c_uint64 = 0;
 
-    // Allocate per-reader event contexts that we'll merge after parallel region
-    var evtContexts: [0..<numberOfReaders] EvtCallbackContext;
+    coforall i in 0..<numberOfReaders with (+ reduce totalEventsReadAcrossReaders, ref evtContexts) {
+       // Open reader
+       var reader = OTF2_Reader_Open(tracePath.c_str());
+       if reader != nil {
+         OTF2_Reader_SetSerialCollectiveCallbacks(reader);
 
-    coforall i in 0..<numberOfReaders with (+ reduce totalEventsReadAcrossReaders, ref defCtx, ref evtContexts) {
-      // Each task will have its own reader
-      var reader = OTF2_Reader_Open(tracePath.c_str());
+         // Partition locations
+         var numLocationsToReadForThisTask = totalLocs / numberOfReaders;
+         const low = i * numLocationsToReadForThisTask;
+         const high = if i == numberOfReaders - 1 then totalLocs
+                      else (i + 1) * numLocationsToReadForThisTask;
 
-      if reader != nil {
-        OTF2_Reader_SetSerialCollectiveCallbacks(reader);
+         // Select locations
+         for locIdx in low..<high {
+           const loc = locationArray[locIdx];
+           OTF2_Reader_SelectLocation(reader, loc);
+         }
 
-        var sw_inner: stopwatch;
-        sw_inner.start();
+         OTF2_Reader_OpenEvtFiles(reader);
 
-        var numLocationsToReadForThisTask = totalLocs / numberOfReaders;
-        const low = i * numLocationsToReadForThisTask;
-        const high = if i == numberOfReaders - 1 then totalLocs
-                     else (i + 1) * numLocationsToReadForThisTask;
+         // Mark files
+         for locIdx in low..<high {
+           const loc = locationArray[locIdx];
+           var _evtReader = OTF2_Reader_GetEvtReader(reader, loc);
+         }
 
-        // Select locations for this task
-        for locIdx in low..<high {
-          const loc = locationArray[locIdx];
-          // writeln("Task ", i, " selecting location ", loc);
-          OTF2_Reader_SelectLocation(reader, loc);
-        }
+         // Setup callbacks
+         var globalEvtReader = OTF2_Reader_GetGlobalEvtReader(reader);
+         var evtCallbacks = OTF2_GlobalEvtReaderCallbacks_New();
 
-        OTF2_Reader_OpenEvtFiles(reader);
+         // Use local context
+         ref localCtx = evtContexts[i];
 
-        for locIdx in low..<high {
-          const loc = locationArray[locIdx];
-          // Mark file to be read by Global Reader later
-          var _evtReader = OTF2_Reader_GetEvtReader(reader, loc);
-        }
+         OTF2_GlobalEvtReaderCallbacks_SetEnterCallback(evtCallbacks, c_ptrTo(Enter_callback): c_fn_ptr);
+         OTF2_GlobalEvtReaderCallbacks_SetLeaveCallback(evtCallbacks, c_ptrTo(Leave_callback): c_fn_ptr);
+         OTF2_GlobalEvtReaderCallbacks_SetMetricCallback(evtCallbacks, c_ptrTo(Metric_callback): c_fn_ptr);
 
-        const markTime = sw_inner.elapsed();
-        writeln("Time taken to mark all local event files for reading (task ", i, "): ", markTime, " seconds");
-        sw_inner.clear();
+         OTF2_Reader_RegisterGlobalEvtCallbacks(reader, globalEvtReader, evtCallbacks, c_ptrTo(localCtx): c_ptr(void));
+         OTF2_GlobalEvtReaderCallbacks_Delete(evtCallbacks);
 
-        var globalEvtReader = OTF2_Reader_GetGlobalEvtReader(reader);
-        var evtCallbacks = OTF2_GlobalEvtReaderCallbacks_New();
-        // Local context for this task; copied into shared array after reading events
-        var localEvtCtx = new EvtCallbackContext(evtArgs, defCtx);
-        ref evtCtx = localEvtCtx;
+         var totalEventsRead: c_uint64 = 0;
+         OTF2_Reader_ReadAllGlobalEvents(reader, globalEvtReader, c_ptrTo(totalEventsRead));
+         totalEventsReadAcrossReaders += totalEventsRead;
 
-        OTF2_GlobalEvtReaderCallbacks_SetEnterCallback(evtCallbacks,
-                                                      c_ptrTo(Enter_callback): c_fn_ptr);
-        OTF2_GlobalEvtReaderCallbacks_SetLeaveCallback(evtCallbacks,
-                                                      c_ptrTo(Leave_callback): c_fn_ptr);
-        OTF2_GlobalEvtReaderCallbacks_SetMetricCallback(evtCallbacks,
-                                                        c_ptrTo(Metric_callback): c_fn_ptr);
-
-        OTF2_Reader_RegisterGlobalEvtCallbacks(reader,
-                                              globalEvtReader,
-                                              evtCallbacks,
-                                              c_ptrTo(evtCtx): c_ptr(void));
-
-        OTF2_GlobalEvtReaderCallbacks_Delete(evtCallbacks);
-
-        var totalEventsRead: c_uint64 = 0;
-        OTF2_Reader_ReadAllGlobalEvents(reader,
-                                        globalEvtReader,
-                                        c_ptrTo(totalEventsRead));
-        totalEventsReadAcrossReaders += totalEventsRead;
-
-        const evtReadTime = sw_inner.elapsed();
-        writeln("Time taken to read events (task ", i, "): ", evtReadTime, " seconds");
-        sw_inner.clear();
-        OTF2_Reader_CloseGlobalEvtReader(reader, globalEvtReader);
-        OTF2_Reader_CloseEvtFiles(reader);
-        OTF2_Reader_Close(reader);
-        const closeTime = sw_inner.elapsed();
-        sw_inner.stop();
-        sw_inner.clear();
-        // Copy local context with accumulated events into global array slot
-        evtContexts[i] = localEvtCtx;
-      } else {
-        writeln("Failed to open trace file");
-      }
+         OTF2_Reader_CloseGlobalEvtReader(reader, globalEvtReader);
+         OTF2_Reader_CloseEvtFiles(reader);
+         OTF2_Reader_Close(reader);
+       } else {
+         writeln("Failed to open trace file in task ", i);
+       }
     }
+
+    const evtReadTime = sw.elapsed();
+    writeln("Time taken to read events: ", evtReadTime, " seconds");
+    sw.clear();
+
+    writeln("Total events read: ", totalEventsReadAcrossReaders);
+
+    // Merge contexts
+    writeln("Merging contexts...");
+    var mergedCtx = try! mergeEvtContexts(evtContexts);
+    const mergeTime = sw.elapsed();
+    writeln("Time taken to merge contexts: ", mergeTime, " seconds");
+    sw.clear();
+
     sw.stop();
-    writeln("Total time: ", sw.elapsed(), " seconds");
+    writeln("Total time: ", openTime + defReadTime + evtReadTime + mergeTime, " seconds");
 
-    // --- Merge per-reader contexts into a single aggregated structure ---
-    writeln("\n--- Merging contexts from parallel readers ---");
-
-    var mergedEvtCtx = new EvtCallbackContext(evtArgs, defCtx);
-
-    for i in 0..<numberOfReaders {
-      const ctx = evtContexts[i];
-
-      // Merge seenGroups
-      for (group, threads) in ctx.seenGroups.items() {
-        if !mergedEvtCtx.seenGroups.contains(group) {
-          try! mergedEvtCtx.seenGroups[group] = threads;
-        } else {
-          try! mergedEvtCtx.seenGroups[group] += threads;
-        }
-      }
-
-      // Merge callGraphs
-      for (group, threadMap) in ctx.callGraphs.items() {
-        if !mergedEvtCtx.callGraphs.contains(group) {
-          try! mergedEvtCtx.callGraphs[group] = threadMap;
-        } else {
-          for (thread, callGraph) in threadMap.items() {
-            if !mergedEvtCtx.callGraphs[group].contains(thread) {
-              try! mergedEvtCtx.callGraphs[group][thread] = callGraph;
-            } else {
-              // If both have same thread, we need to merge call graphs
-              // For simplicity, we can keep the existing one (shouldn't happen with proper partitioning)
-              writeln("Warning: Duplicate thread ", thread, " in group ", group, " - keeping first occurrence");
-            }
-          }
-        }
-      }
-
-      // Merge metrics
-      for (group, metricMap) in ctx.metrics.items() {
-        if !mergedEvtCtx.metrics.contains(group) {
-          try! mergedEvtCtx.metrics[group] = metricMap;
-        } else {
-          for (metricName, values) in metricMap.items() {
-            if !mergedEvtCtx.metrics[group].contains(metricName) {
-              try! mergedEvtCtx.metrics[group][metricName] = values;
-            } else {
-              // Append values from this reader
-              for val in values {
-                try! mergedEvtCtx.metrics[group][metricName].pushBack(val);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    writeln("Merge complete. Total events read: ", totalEventsReadAcrossReaders);
-    
-    // printCallGraphAndMetrics(mergedEvtCtx, true);
-    writeCallGraphsAndMetricsToCSV(mergedEvtCtx);
+    // Write CSVs
+    writeCallGraphsAndMetricsToCSV(mergedCtx);
   }
 
   proc callgraphToCSV(callGraph: shared CallGraph, group: string, thread: string, filename: string) {
